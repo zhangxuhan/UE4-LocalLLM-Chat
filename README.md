@@ -1,8 +1,8 @@
 # UE4-LocalLLM-Chat
 
+> UE4.27 + UnLua + FastAPI + Ollama 本地 LLM 实时 NPC 对话系统  
 > UE4.27 + UnLua + FastAPI + Ollama によるローカル LLM NPC 対話システム  
-> UE4.27 + UnLua + FastAPI + Ollama Local LLM NPC Dialogue System  
-> UE4.27 + UnLua + FastAPI + Ollama 本地 LLM 实时 NPC 对话系统
+> UE4.27 + UnLua + FastAPI + Ollama Local LLM NPC Dialogue System
 
 ---
 
@@ -184,61 +184,116 @@ MIT
 - **カスタム SystemPrompt** — クライアントから NPC のキャラクター設定を動的に注入可能
 - **マルチモデル対応** — Ollama がサポートする全モデル（qwen2.5、llama3、mistral 等）に対応
 
-#### アーキテクチャ
+#### アーキテクチャ概要
 
 ```
-┌──────────────────────────────┐
-│       UE4.27 クライアント      │
-│  UMG_MAIN (UnLua)            │
-│       ↓                      │
-│  ProjectChatGameMode (C++)   │
-│       ↓ HTTP POST            │
-└───────┼──────────────────────┘
-        │
-        ▼
-┌──────────────────────────────┐
-│  FastAPI Server (:18080)     │
-│  /v1/chat/session            │
-│  Session Manager (per NPC)   │
-└───────┼──────────────────────┘
-        │
-        ▼
-┌──────────────────────────────┐
-│  Ollama (:11434)             │
-│  qwen2.5:7b / llama3 / ...  │
-└──────────────────────────────┘
+┌──────────────────────────────────────────────┐
+│                UE4.27 クライアント             │
+│  ┌────────────┐    ┌──────────────────────┐  │
+│  │ UMG_MAIN   │───▶│ ProjectChatGameMode  │  │
+│  │ (UnLua)    │    │ (C++, IUnLuaInterface)│  │
+│  └────────────┘    └──────────┬───────────┘  │
+│                               │ HTTP POST     │
+└───────────────────────────────┼───────────────┘
+                                │
+                                ▼
+┌──────────────────────────────────────────────┐
+│        FastAPI サーバー (localhost:18080)      │
+│  ┌──────────────────────────────────────┐    │
+│  │  /v1/chat/session?session_id=xxx     │    │
+│  │  ChatRequest: messages + system_prompt│    │
+│  └──────────────────┬───────────────────┘    │
+│                     │                        │
+│                     ▼                        │
+│  ┌──────────────────────────────────────┐    │
+│  │   セッションマネージャー (NPC 毎)       │    │
+│  │  [system][user][assistant][user]...   │    │
+│  └──────────────────┬───────────────────┘    │
+└─────────────────────┼────────────────────────┘
+                      │
+                      ▼
+┌──────────────────────────────────────────────┐
+│          Ollama (localhost:11434)             │
+│  qwen2.5:7b / llama3 / mistral / ...         │
+└──────────────────────────────────────────────┘
+```
+
+#### ファイル構成
+
+```
+UE4-LocalLLM-Chat/
+├── README.md                 # 本ファイル
+├── install.bat               # Windows ワンクリックインストール
+├── server/                   # Python FastAPI サーバー
+│   ├── main.py               # API メインプログラム
+│   ├── config.py             # 設定ファイル
+│   └── requirements.txt      # Python 依存関係
+├── client/                   # テストクライアント
+│   ├── test_client.py        # CLI テストツール
+│   └── web/
+│       └── index.html        # Web チャット UI
+└── ue4/
+    └── ProjectChat/          # UE4.27 プロジェクト
+        ├── ProjectChat.uproject
+        ├── Source/
+        │   ├── ProjectChat.Target.cs
+        │   ├── ProjectChatEditor.Target.cs
+        │   └── ProjectChat/
+        │       ├── ProjectChat.h / .cpp
+        │       ├── ProjectChat.Build.cs
+        │       ├── ProjectChatCharacter.h / .cpp
+        │       ├── ProjectChatGameMode.h / .cpp     # GameMode（IUnLuaInterface）
+        │       └── LLMChatComponent.h / .cpp        # オプションコンポーネント（BP 対応）
+        └── Content/
+            └── Script/                              # UnLua スクリプト
+                ├── ProjectChat/
+                │   ├── ProjectChatGameMode.lua      # GameMode バインディング
+                │   └── LLMChatComponent.lua         # コンポーネントバインディング
+                ├── Tools/
+                │   └── Screen.lua                   # 画面出力ユーティリティ
+                └── UMG/
+                    └── UMG_MAIN.lua                 # チャット UI メインロジック
 ```
 
 #### クイックスタート
 
 **前提条件**
 - Python 3.9+
-- [Ollama](https://ollama.com/) インストール済み
+- [Ollama](https://ollama.com/) インストール済み・モデル取得済み
 - UE 4.27 + Visual Studio 2019
 - [UnLua 2.3.6](https://github.com/Tencent/UnLua) プラグイン
 
-**サーバー起動**
+**1. サーバーのインストールと起動**
 
 ```bash
+# ワンクリックインストール（Windows）
 install.bat
-# または
-cd server && pip install -r requirements.txt
+
+# または手動で
+cd server
+pip install -r requirements.txt
 ollama pull qwen2.5:7b
 python main.py
 ```
 
-**API テスト**
+**2. API のテスト**
 
 ```bash
+# ヘルスチェック
 curl http://localhost:18080/v1/health
-cd client && python test_client.py "こんにちは！"
+
+# CLI チャット
+cd client
+python test_client.py "こんにちは！"
+
+# または client/web/index.html をブラウザで開く
 ```
 
-**UE4 セットアップ**
-- `Plugins/UnLua/` に UnLua を配置
+**3. UE4 セットアップ**
+- UnLua 2.3.6 プラグインを `Plugins/UnLua/` に配置
 - `ue4/ProjectChat/ProjectChat.uproject` を開く
-- UMG_MAIN に `IUnLuaInterface` を実装
-- ブループリントに `CheckReply` 関数を追加（空実装）
+- UMG_MAIN ウィジェットに `IUnLuaInterface` を実装
+- ブループリントに `CheckReply` 関数を追加（空実装で可）
 - コンパイルして実行
 
 #### API エンドポイント
@@ -267,6 +322,8 @@ local NPCSystemPrompt = [[
 ]]
 ```
 
+Lua → C++ → Python のパイプラインが自動的にカスタムプロンプトを LLM に渡します。
+
 #### ライセンス
 
 MIT
@@ -292,26 +349,72 @@ MIT
 #### Architecture
 
 ```
-┌──────────────────────────────┐
-│       UE4.27 Client           │
-│  UMG_MAIN (UnLua)             │
-│       ↓                       │
-│  ProjectChatGameMode (C++)    │
-│       ↓ HTTP POST             │
-└───────┼───────────────────────┘
-        │
-        ▼
-┌──────────────────────────────┐
-│  FastAPI Server (:18080)      │
-│  /v1/chat/session             │
-│  Session Manager (per NPC)    │
-└───────┼───────────────────────┘
-        │
-        ▼
-┌──────────────────────────────┐
-│  Ollama (:11434)              │
-│  qwen2.5:7b / llama3 / ...   │
-└──────────────────────────────┘
+┌──────────────────────────────────────────────┐
+│                  UE4.27 Client               │
+│  ┌────────────┐    ┌──────────────────────┐  │
+│  │ UMG_MAIN   │───▶│ ProjectChatGameMode  │  │
+│  │ (UnLua)    │    │ (C++, IUnLuaInterface)│  │
+│  └────────────┘    └──────────┬───────────┘  │
+│                               │ HTTP POST     │
+└───────────────────────────────┼───────────────┘
+                                │
+                                ▼
+┌──────────────────────────────────────────────┐
+│          FastAPI Server (localhost:18080)     │
+│  ┌──────────────────────────────────────┐    │
+│  │  /v1/chat/session?session_id=xxx     │    │
+│  │  ChatRequest: messages + system_prompt│    │
+│  └──────────────────┬───────────────────┘    │
+│                     │                        │
+│                     ▼                        │
+│  ┌──────────────────────────────────────┐    │
+│  │     Session Manager (per NPC)         │    │
+│  │  [system][user][assistant][user]...   │    │
+│  └──────────────────┬───────────────────┘    │
+└─────────────────────┼────────────────────────┘
+                      │
+                      ▼
+┌──────────────────────────────────────────────┐
+│          Ollama (localhost:11434)             │
+│  qwen2.5:7b / llama3 / mistral / ...         │
+└──────────────────────────────────────────────┘
+```
+
+#### File Structure
+
+```
+UE4-LocalLLM-Chat/
+├── README.md                 # This file
+├── install.bat               # Windows one-click install script
+├── server/                   # Python FastAPI server
+│   ├── main.py               # API main program
+│   ├── config.py             # Configuration file
+│   └── requirements.txt      # Python dependencies
+├── client/                   # Test clients
+│   ├── test_client.py        # CLI test tool
+│   └── web/
+│       └── index.html        # Web chat UI
+└── ue4/
+    └── ProjectChat/          # UE4.27 project
+        ├── ProjectChat.uproject
+        ├── Source/
+        │   ├── ProjectChat.Target.cs
+        │   ├── ProjectChatEditor.Target.cs
+        │   └── ProjectChat/
+        │       ├── ProjectChat.h / .cpp
+        │       ├── ProjectChat.Build.cs
+        │       ├── ProjectChatCharacter.h / .cpp
+        │       ├── ProjectChatGameMode.h / .cpp     # GameMode (IUnLuaInterface)
+        │       └── LLMChatComponent.h / .cpp        # Optional component (Blueprint-friendly)
+        └── Content/
+            └── Script/                              # UnLua scripts
+                ├── ProjectChat/
+                │   ├── ProjectChatGameMode.lua      # GameMode binding
+                │   └── LLMChatComponent.lua         # Component binding
+                ├── Tools/
+                │   └── Screen.lua                   # Screen print utility
+                └── UMG/
+                    └── UMG_MAIN.lua                 # Chat UI main logic
 ```
 
 #### Quick Start
@@ -322,7 +425,7 @@ MIT
 - UE 4.27 + Visual Studio 2019
 - [UnLua 2.3.6](https://github.com/Tencent/UnLua) plugin
 
-**Start the Server**
+**1. Install & Start Server**
 
 ```bash
 # One-click install (Windows)
@@ -335,7 +438,7 @@ ollama pull qwen2.5:7b
 python main.py
 ```
 
-**Test the API**
+**2. Test the API**
 
 ```bash
 # Health check
@@ -348,11 +451,11 @@ python test_client.py "Hello!"
 # Or open client/web/index.html in a browser
 ```
 
-**UE4 Setup**
-- Place UnLua 2.3.6 in `Plugins/UnLua/`
+**3. UE4 Setup**
+- Place UnLua 2.3.6 plugin in `Plugins/UnLua/`
 - Open `ue4/ProjectChat/ProjectChat.uproject`
 - Implement `IUnLuaInterface` on UMG_MAIN Widget
-- Add a `CheckReply` function in Blueprint (empty body)
+- Add a `CheckReply` function in Blueprint (empty body is fine)
 - Compile and run
 
 #### API Endpoints
