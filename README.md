@@ -5,6 +5,7 @@
 > UE4.27 + UnLua + FastAPI + Ollama Local LLM NPC Dialogue System
 
 ---
+<img width="617" height="387" alt="13225a32-e3c9-459c-94af-1553c9553cd2" src="https://github.com/user-attachments/assets/82029e0c-7934-4cbb-8260-9f9229744b05" />
 
 ## 中文
 
