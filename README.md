@@ -74,6 +74,12 @@ UE4-LocalLLM-Chat/
 └── ue4/
     └── ProjectChat/          # UE4.27 项目
         ├── ProjectChat.uproject
+        ├── Config/
+        │   ├── DefaultEngine.ini              # 引擎配置（GameMode、地图）
+        │   ├── DefaultGame.ini                # 打包配置（UnLua 脚本路径注册）
+        │   ├── DefaultInput.ini               # 输入绑定
+        │   ├── DefaultEditor.ini              # 编辑器设置
+        │   └── DefaultEditorPerProjectUserSettings.ini
         ├── Source/
         │   ├── ProjectChat.Target.cs
         │   ├── ProjectChatEditor.Target.cs
@@ -84,7 +90,9 @@ UE4-LocalLLM-Chat/
         │       ├── ProjectChatGameMode.h / .cpp     # GameMode（IUnLuaInterface）
         │       └── LLMChatComponent.h / .cpp        # 可选组件（Blueprint 友好）
         └── Content/
-            └── Script/                              # UnLua 脚本
+            ├── UMG/
+            │   └── UMG_Main.uasset            # 聊天 UI 蓝图（绑定 UnLua）
+            └── Script/                        # UnLua 脚本
                 ├── ProjectChat/
                 │   ├── ProjectChatGameMode.lua      # GameMode 绑定
                 │   └── LLMChatComponent.lua         # 组件绑定
@@ -100,7 +108,7 @@ UE4-LocalLLM-Chat/
 - Python 3.9+
 - [Ollama](https://ollama.com/) 已安装并拉取模型
 - UE 4.27 + Visual Studio 2019
-- [UnLua 2.3.6](https://github.com/Tencent/UnLua) 插件
+- [UnLua 2.3.6](https://github.com/Tencent/UnLua) 插件（放入 `Plugins/UnLua/`）
 
 **1. 安装并启动服务端**
 
@@ -232,6 +240,12 @@ UE4-LocalLLM-Chat/
 └── ue4/
     └── ProjectChat/          # UE4.27 プロジェクト
         ├── ProjectChat.uproject
+        ├── Config/
+        │   ├── DefaultEngine.ini              # エンジン設定（GameMode、マップ）
+        │   ├── DefaultGame.ini                # パッケージ設定（UnLua スクリプトパス登録）
+        │   ├── DefaultInput.ini               # 入力バインド
+        │   ├── DefaultEditor.ini              # エディタ設定
+        │   └── DefaultEditorPerProjectUserSettings.ini
         ├── Source/
         │   ├── ProjectChat.Target.cs
         │   ├── ProjectChatEditor.Target.cs
@@ -242,7 +256,9 @@ UE4-LocalLLM-Chat/
         │       ├── ProjectChatGameMode.h / .cpp     # GameMode（IUnLuaInterface）
         │       └── LLMChatComponent.h / .cpp        # オプションコンポーネント（BP 対応）
         └── Content/
-            └── Script/                              # UnLua スクリプト
+            ├── UMG/
+            │   └── UMG_Main.uasset            # チャット UI ブループリント（UnLua バインド）
+            └── Script/                        # UnLua スクリプト
                 ├── ProjectChat/
                 │   ├── ProjectChatGameMode.lua      # GameMode バインディング
                 │   └── LLMChatComponent.lua         # コンポーネントバインディング
@@ -258,7 +274,7 @@ UE4-LocalLLM-Chat/
 - Python 3.9+
 - [Ollama](https://ollama.com/) インストール済み・モデル取得済み
 - UE 4.27 + Visual Studio 2019
-- [UnLua 2.3.6](https://github.com/Tencent/UnLua) プラグイン
+- [UnLua 2.3.6](https://github.com/Tencent/UnLua) プラグイン（`Plugins/UnLua/` に配置）
 
 **1. サーバーのインストールと起動**
 
@@ -390,6 +406,12 @@ UE4-LocalLLM-Chat/
 └── ue4/
     └── ProjectChat/          # UE4.27 project
         ├── ProjectChat.uproject
+        ├── Config/
+        │   ├── DefaultEngine.ini              # Engine config (GameMode, map)
+        │   ├── DefaultGame.ini                # Packaging config (UnLua script paths)
+        │   ├── DefaultInput.ini               # Input bindings
+        │   ├── DefaultEditor.ini              # Editor settings
+        │   └── DefaultEditorPerProjectUserSettings.ini
         ├── Source/
         │   ├── ProjectChat.Target.cs
         │   ├── ProjectChatEditor.Target.cs
@@ -400,7 +422,9 @@ UE4-LocalLLM-Chat/
         │       ├── ProjectChatGameMode.h / .cpp     # GameMode (IUnLuaInterface)
         │       └── LLMChatComponent.h / .cpp        # Optional component (Blueprint-friendly)
         └── Content/
-            └── Script/                              # UnLua scripts
+            ├── UMG/
+            │   └── UMG_Main.uasset            # Chat UI blueprint (UnLua binding)
+            └── Script/                        # UnLua scripts
                 ├── ProjectChat/
                 │   ├── ProjectChatGameMode.lua      # GameMode binding
                 │   └── LLMChatComponent.lua         # Component binding
@@ -416,7 +440,7 @@ UE4-LocalLLM-Chat/
 - Python 3.9+
 - [Ollama](https://ollama.com/) installed with models pulled
 - UE 4.27 + Visual Studio 2019
-- [UnLua 2.3.6](https://github.com/Tencent/UnLua) plugin
+- [UnLua 2.3.6](https://github.com/Tencent/UnLua) plugin (place in `Plugins/UnLua/`)
 
 **1. Install & Start Server**
 
