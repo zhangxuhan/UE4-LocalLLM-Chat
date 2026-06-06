@@ -1,0 +1,20 @@
+{
+    "FileVersion": 3,
+    "Version": 1,
+    "VersionName": "1.0",
+    "FriendlyName": "LipSync",
+    "Description": "TTS lip-sync component for offline voice dialogue",
+    "Category": "Gameplay",
+    "CreatedBy": "WorkBuddy",
+    "CanContainContent": false,
+    "IsBetaVersion": false,
+    "Installed": false,
+    "CanBeUsedWithUnrealHeaderTool": true,
+    "Modules": [
+        {
+            "Name": "LipSync",
+            "Type": "Runtime",
+            "LoadingPhase": "Default"
+        }
+    ]
+}
