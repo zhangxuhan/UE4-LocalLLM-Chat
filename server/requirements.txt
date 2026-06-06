@@ -3,3 +3,7 @@ uvicorn[standard]==0.34.0
 websockets==14.1
 httpx==0.28.1
 pydantic==2.10.4
+# --- 语音识别 ---
+faster-whisper>=1.0.3
+numpy>=1.24.0
+python-multipart>=0.0.9
