@@ -1,339 +1,176 @@
 # UE4-LocalLLM-Chat
 
-> UE4.27 + UnLua + FastAPI + Ollama 本地 LLM 实时 NPC 对话系统  
-> UE4.27 + UnLua + FastAPI + Ollama によるローカル LLM NPC 対話システム  
-> UE4.27 + UnLua + FastAPI + Ollama Local LLM NPC Dialogue System
+> **v2.0** UE4.27 + UnLua + FastAPI + Ollama — 本地 LLM 语音对话 + 口型同步系统  
+> **v2.0** UE4.27 + UnLua + FastAPI + Ollama — Local LLM Voice Dialogue + Lip Sync System
 
 ---
+
 <img width="617" height="387" alt="13225a32-e3c9-459c-94af-1553c9553cd2" src="https://github.com/user-attachments/assets/82029e0c-7934-4cbb-8260-9f9229744b05" />
 
 ## 中文
 
 ### 项目简介
 
-**UE4-LocalLLM-Chat** 是一套完整的本地 LLM（大语言模型）NPC 对话系统。它让你在 UE4.27 中使用 UnLua 脚本驱动的 UMG 界面，与本地运行的 Ollama 大模型进行实时对话。
+**UE4-LocalLLM-Chat v2.0** 在 v1.0 文字对话系统的基础上，新增了完整的**语音输入（ASR）→ LLM 对话 → 语音输出（TTS）→ 口型同步**链路，实现真正意义上的语音驱动 NPC 对话系统。所有模块均支持本地离线运行。
 
-#### 核心特性
+#### v2.0 新增特性
 
-- **完全本地运行** — 无需联网，数据不出本地，隐私安全
-- **FastAPI 后端** — 异步 HTTP + WebSocket + SSE 流式输出
-- **UE4.27 集成** — 通过 UnLua 2.3.6 实现 Lua 脚本驱动 UMG
-- **多会话管理** — 按 session_id 隔离不同 NPC 的对话上下文
-- **异步非阻塞** — HTTP 异步发送 + K2_SetTimer 轮询，不卡游戏主线程
-- **定制 SystemPrompt** — 客户端可动态传入 NPC 人设提示词
-- **跨平台模型** — 支持 Ollama 所有模型（qwen2.5、llama3、mistral 等）
+| 模块 | 技术方案 | 说明 |
+|------|----------|------|
+| 语音识别 ASR | faster-whisper base | 服务端麦克风采集 + Whisper 离线识别 |
+| 语音合成 TTS | edge-tts + ffmpeg | 微软神经网络 TTS，小晓音色 |
+| 口型同步 | MorphTarget 时间线 | 音素映射 → 关键帧 → UE4 SetMorphTarget |
+| Lua 集成 | UnLua + ReceiveTick | 绑定三个组件，热重载无需重编译 |
 
 #### 架构概览
 
 ```
-┌──────────────────────────────────────────────┐
-│                  UE4.27 Client               │
-│  ┌────────────┐    ┌──────────────────────┐  │
-│  │ UMG_MAIN   │───▶│ ProjectChatGameMode  │  │
-│  │ (UnLua)    │    │ (C++, IUnLuaInterface)│  │
-│  └────────────┘    └──────────┬───────────┘  │
-│                               │ HTTP POST     │
-└───────────────────────────────┼───────────────┘
-                                │
-                                ▼
-┌──────────────────────────────────────────────┐
-│          FastAPI Server (localhost:18080)     │
-│  ┌──────────────────────────────────────┐    │
-│  │  /v1/chat/session?session_id=xxx     │    │
-│  │  ChatRequest: messages + system_prompt│    │
-│  └──────────────────┬───────────────────┘    │
-│                     │                        │
-│                     ▼                        │
-│  ┌──────────────────────────────────────┐    │
-│  │     Session Manager (per NPC)         │    │
-│  │  [system][user][assistant][user]...   │    │
-│  └──────────────────┬───────────────────┘    │
-└─────────────────────┼────────────────────────┘
-                      │
-                      ▼
-┌──────────────────────────────────────────────┐
-│          Ollama (localhost:11434)             │
-│  qwen2.5:7b / llama3 / mistral / ...         │
-└──────────────────────────────────────────────┘
+[玩家按住 V 键]
+      │
+      ▼
+┌─────────────────────────────────────────────┐
+│            UE4.27 Client (UnLua)            │
+│                                             │
+│  ASRComponent ──HTTP POST──▶ /v1/asr/start  │
+│      │                                      │
+│  [松开 V]──HTTP POST──▶ /v1/asr/stop        │
+│      │                                      │
+│  OnSpeechRecognized                         │
+│      │                                      │
+│  LLMChatComponent ──HTTP──▶ /v1/chat/session│
+│      │                                      │
+│  OnResponseReceived                         │
+│      │                                      │
+│  TTSLipSyncComponent ──HTTP──▶ /v1/tts      │
+│      │                                      │
+│  播放音频 + ReceiveTick 驱动 MorphTarget      │
+└─────────────────────────────────────────────┘
+                    │
+                    ▼
+┌─────────────────────────────────────────────┐
+│       FastAPI Server (localhost:18080)       │
+│                                             │
+│  POST /v1/asr/start  ── sounddevice 录音    │
+│  POST /v1/asr/stop   ── Whisper 识别        │
+│  POST /v1/chat/session ── Ollama LLM        │
+│  POST /v1/tts        ── edge-tts + 音素线  │
+└─────────────────────────────────────────────┘
+                    │
+          ┌─────────┴─────────┐
+          ▼                   ▼
+   Ollama (11434)        edge-tts / ffmpeg
+   qwen2.5:7b            zh-CN-XiaoxiaoNeural
 ```
 
 #### 文件结构
 
 ```
 UE4-LocalLLM-Chat/
-├── README.md                 # 本文件
-├── install.bat               # Windows 一键安装脚本
-├── server/                   # Python FastAPI 服务端
-│   ├── main.py               # API 服务主程序
-│   ├── config.py             # 配置文件
-│   └── requirements.txt      # Python 依赖
-├── client/                   # 测试客户端
-│   ├── test_client.py        # 命令行测试工具
-│   └── web/
-│       └── index.html        # Web 聊天界面
-└── ue4/
-    └── ProjectChat/          # UE4.27 项目
-        ├── ProjectChat.uproject
-        ├── Config/
-        │   ├── DefaultEngine.ini              # 引擎配置（GameMode、地图）
-        │   ├── DefaultGame.ini                # 打包配置（UnLua 脚本路径注册）
-        │   ├── DefaultInput.ini               # 输入绑定
-        │   ├── DefaultEditor.ini              # 编辑器设置
-        │   └── DefaultEditorPerProjectUserSettings.ini
-        ├── Source/
-        │   ├── ProjectChat.Target.cs
-        │   ├── ProjectChatEditor.Target.cs
-        │   └── ProjectChat/
-        │       ├── ProjectChat.h / .cpp
-        │       ├── ProjectChat.Build.cs
-        │       ├── ProjectChatCharacter.h / .cpp
-        │       ├── ProjectChatGameMode.h / .cpp     # GameMode（IUnLuaInterface）
-        │       └── LLMChatComponent.h / .cpp        # 可选组件（Blueprint 友好）
-        └── Content/
-            ├── UMG/
-            │   └── UMG_Main.uasset            # 聊天 UI 蓝图（绑定 UnLua）
-            └── Script/                        # UnLua 脚本
-                ├── ProjectChat/
-                │   ├── ProjectChatGameMode.lua      # GameMode 绑定
-                │   └── LLMChatComponent.lua         # 组件绑定
-                ├── Tools/
-                │   └── Screen.lua                   # 屏幕打印工具
-                └── UMG/
-                    └── UMG_MAIN.lua                 # 聊天 UI 主逻辑
+├── README.md
+├── install.bat               # 基础环境安装
+├── install_voice.bat         # 语音模块安装（v2.0 新增）
+├── server/
+│   ├── main.py               # API 服务（含 ASR/TTS 端点）
+│   ├── asr_service.py        # faster-whisper 封装（v2.0 新增）
+│   ├── tts_service.py        # TTS + 音素时间线
+│   ├── config.py             # 配置
+│   ├── requirements.txt      # 依赖（含 faster-whisper, edge-tts）
+│   └── test_voice_pipeline.py # 语音管线端到端测试（v2.0 新增）
+├── client/
+│   ├── test_client.py
+│   └── web/index.html
+└── ue4/ProjectChat/
+    ├── Plugins/
+    │   └── LipSync/          # 语音对话插件（v2.0 新增）
+    │       ├── LipSync.uplugin
+    │       └── Source/LipSync/
+    │           ├── Public/
+    │           │   ├── ASRComponent.h        # 语音识别组件
+    │           │   └── TTSLipSyncComponent.h # TTS + 口型同步组件
+    │           └── Private/
+    │               ├── ASRComponent.cpp
+    │               ├── TTSLipSyncComponent.cpp
+    │               └── LipSyncModule.cpp
+    ├── Source/ProjectChat/
+    │   ├── LLMChatComponent.h / .cpp   # LLM 对话组件
+    │   └── ...
+    └── Content/Script/
+        ├── ThirdPersonCPP/
+        │   └── ThirdPersonCharacter.lua # 语音对话主逻辑（v2.0 新增）
+        ├── ProjectChat/
+        └── UMG/
 ```
 
 #### 快速开始
 
 **前置要求**
-- Python 3.9+
-- [Ollama](https://ollama.com/) 已安装并拉取模型
-- UE 4.27 + Visual Studio 2019
-- [UnLua 2.3.6](https://github.com/Tencent/UnLua) 插件（放入 `Plugins/UnLua/`）
+- Python 3.9+ / UE 4.27 / Visual Studio 2022 / ffmpeg（在 PATH 中）
+- [Ollama](https://ollama.com/) 已安装并执行 `ollama pull qwen2.5:7b`
+- [UnLua 2.3.6](https://github.com/Tencent/UnLua)
 
-**1. 安装并启动服务端**
+**1. 安装依赖并启动服务**
 
 ```bash
-# 一键安装（Windows）
-install.bat
+# 安装所有依赖（含 Whisper 模型首次下载约 150MB）
+install_voice.bat
 
-# 或手动执行
+# 启动服务
 cd server
-pip install -r requirements.txt
-ollama pull qwen2.5:7b
 python main.py
 ```
 
-**2. 测试 API**
+**2. UE4 插件设置**
 
-```bash
-# 健康检查
-curl http://localhost:18080/v1/health
-
-# 命令行对话
-cd client
-python test_client.py "你好！"
-
-# 或打开 client/web/index.html 在浏览器中对话
+```
+1. 将 ue4/ProjectChat/Plugins/LipSync/ 复制到你的项目 Plugins/
+2. 在角色 Blueprint 的 Components 面板添加：
+   - ASRComponent
+   - LLMChatComponent
+   - TTSLipSyncComponent
+3. 在角色 Blueprint 的 Class Settings → Interfaces 添加 UnLuaInterface
+4. 实现 GetModuleName，返回 "ThirdPersonCPP.ThirdPersonCharacter"
+5. 编译运行
 ```
 
-**3. UE4 集成**
-- 安装 UnLua 2.3.6 插件到 `Plugins/UnLua/`
-- 打开 `ue4/ProjectChat/ProjectChat.uproject`
-- UMG_MAIN Widget 实现 `IUnLuaInterface` 接口
-- 在蓝图中添加 `CheckReply` 函数（空实现即可）
-- 编译运行
+**3. 使用**
 
-#### API 端点
+```
+按住 V  → 开始录音
+松开 V  → 识别 → LLM 回复 → 播音 + 口型同步
+```
+
+#### API 端点（v2.0 完整版）
 
 | 方法 | 路径 | 说明 |
 |------|------|------|
 | GET | `/v1/health` | 健康检查 |
-| GET | `/v1/models` | 列出可用模型 |
-| POST | `/v1/chat` | 单次对话（无上下文） |
-| POST | `/v1/chat/session?session_id=xxx` | 带上下文对话 ⭐ |
+| GET | `/v1/models` | 可用模型列表 |
+| POST | `/v1/chat` | 单次对话 |
+| POST | `/v1/chat/session` | 带上下文对话 ⭐ |
 | POST | `/v1/chat/session/stream` | SSE 流式对话 |
-| POST | `/v1/chat/reset?session_id=xxx` | 重置会话 |
-| WS | `/v1/chat/ws` | WebSocket 实时对话 |
+| POST | `/v1/chat/reset` | 重置会话 |
+| WS | `/v1/chat/ws` | WebSocket 对话 |
+| POST | `/v1/asr/start` | 开始录音（v2.0）⭐ |
+| POST | `/v1/asr/stop` | 停止录音 + 识别（v2.0）⭐ |
+| POST | `/v1/tts` | TTS + 口型时间线（v2.0）⭐ |
 
-#### 定制 NPC 人设
+#### 口型同步原理
 
-在 `Content/Script/UMG/UMG_MAIN.lua` 中修改 `NPCSystemPrompt`：
+服务端将 LLM 回复文本拆分为音节，映射到对应的嘴型 MorphTarget 权重，生成关键帧时间线随音频一起返回 UE4：
 
-```lua
-local NPCSystemPrompt = [[
-你是一个游戏中的NPC，二次元女生，用简短自然的中文回答玩家问题，喜欢加颜文字，每次回复不超过100字。
-]]
+```python
+# 音素 → MorphTarget 权重示例
+"a" → {"Mouth_Wide": 1.0, "Mouth_Narrow": 0.0, ...}  # 啊
+"u" → {"Mouth_Wide": 0.0, "Mouth_Narrow": 1.0, ...}  # 乌
 ```
 
-Lua → C++ → Python 整条链路自动将定制提示词传递给 LLM。
+UE4 的 `TTSLipSyncComponent` 在 Tick 中线性插值并驱动网格的 MorphTarget，口型跟随音频同步变化。
+
+#### v1.0 → v2.0 升级说明
+
+v2.0 完全向下兼容 v1.0。新增的 LipSync 插件和 Lua 脚本是独立模块，不影响原有文字对话功能。
 
 #### License
-
-MIT
-
----
-
-## 日本語
-
-### プロジェクト概要
-
-**UE4-LocalLLM-Chat** は、UE4.27 内でローカル LLM（大規模言語モデル）と NPC 対話を実現する統合システムです。UnLua で駆動する UMG ウィジェットを通じて、ローカル実行中の Ollama モデルとリアルタイムに対話できます。
-
-#### 主な特徴
-
-- **完全オフライン** — インターネット不要、データはローカルに留まりプライバシー保護
-- **FastAPI バックエンド** — 非同期 HTTP + WebSocket + SSE ストリーミング対応
-- **UE4.27 統合** — UnLua 2.3.6 による Lua スクリプト駆動 UMG
-- **マルチセッション** — session_id 単位で NPC ごとの会話コンテキストを分離
-- **ノンブロッキング非同期** — HTTP 非同期送信 + K2_SetTimer ポーリング、ゲームスレッドをブロックしない
-- **カスタム SystemPrompt** — クライアントから NPC のキャラクター設定を動的に注入可能
-- **マルチモデル対応** — Ollama がサポートする全モデル（qwen2.5、llama3、mistral 等）に対応
-
-#### アーキテクチャ概要
-
-```
-┌──────────────────────────────────────────────┐
-│                UE4.27 クライアント             │
-│  ┌────────────┐    ┌──────────────────────┐  │
-│  │ UMG_MAIN   │───▶│ ProjectChatGameMode  │  │
-│  │ (UnLua)    │    │ (C++, IUnLuaInterface)│  │
-│  └────────────┘    └──────────┬───────────┘  │
-│                               │ HTTP POST     │
-└───────────────────────────────┼───────────────┘
-                                │
-                                ▼
-┌──────────────────────────────────────────────┐
-│        FastAPI サーバー (localhost:18080)      │
-│  ┌──────────────────────────────────────┐    │
-│  │  /v1/chat/session?session_id=xxx     │    │
-│  │  ChatRequest: messages + system_prompt│    │
-│  └──────────────────┬───────────────────┘    │
-│                     │                        │
-│                     ▼                        │
-│  ┌──────────────────────────────────────┐    │
-│  │   セッションマネージャー (NPC 毎)       │    │
-│  │  [system][user][assistant][user]...   │    │
-│  └──────────────────┬───────────────────┘    │
-└─────────────────────┼────────────────────────┘
-                      │
-                      ▼
-┌──────────────────────────────────────────────┐
-│          Ollama (localhost:11434)             │
-│  qwen2.5:7b / llama3 / mistral / ...         │
-└──────────────────────────────────────────────┘
-```
-
-#### ファイル構成
-
-```
-UE4-LocalLLM-Chat/
-├── README.md                 # 本ファイル
-├── install.bat               # Windows ワンクリックインストール
-├── server/                   # Python FastAPI サーバー
-│   ├── main.py               # API メインプログラム
-│   ├── config.py             # 設定ファイル
-│   └── requirements.txt      # Python 依存関係
-├── client/                   # テストクライアント
-│   ├── test_client.py        # CLI テストツール
-│   └── web/
-│       └── index.html        # Web チャット UI
-└── ue4/
-    └── ProjectChat/          # UE4.27 プロジェクト
-        ├── ProjectChat.uproject
-        ├── Config/
-        │   ├── DefaultEngine.ini              # エンジン設定（GameMode、マップ）
-        │   ├── DefaultGame.ini                # パッケージ設定（UnLua スクリプトパス登録）
-        │   ├── DefaultInput.ini               # 入力バインド
-        │   ├── DefaultEditor.ini              # エディタ設定
-        │   └── DefaultEditorPerProjectUserSettings.ini
-        ├── Source/
-        │   ├── ProjectChat.Target.cs
-        │   ├── ProjectChatEditor.Target.cs
-        │   └── ProjectChat/
-        │       ├── ProjectChat.h / .cpp
-        │       ├── ProjectChat.Build.cs
-        │       ├── ProjectChatCharacter.h / .cpp
-        │       ├── ProjectChatGameMode.h / .cpp     # GameMode（IUnLuaInterface）
-        │       └── LLMChatComponent.h / .cpp        # オプションコンポーネント（BP 対応）
-        └── Content/
-            ├── UMG/
-            │   └── UMG_Main.uasset            # チャット UI ブループリント（UnLua バインド）
-            └── Script/                        # UnLua スクリプト
-                ├── ProjectChat/
-                │   ├── ProjectChatGameMode.lua      # GameMode バインディング
-                │   └── LLMChatComponent.lua         # コンポーネントバインディング
-                ├── Tools/
-                │   └── Screen.lua                   # 画面出力ユーティリティ
-                └── UMG/
-                    └── UMG_MAIN.lua                 # チャット UI メインロジック
-```
-
-#### クイックスタート
-
-**前提条件**
-- Python 3.9+
-- [Ollama](https://ollama.com/) インストール済み・モデル取得済み
-- UE 4.27 + Visual Studio 2019
-- [UnLua 2.3.6](https://github.com/Tencent/UnLua) プラグイン（`Plugins/UnLua/` に配置）
-
-**1. サーバーのインストールと起動**
-
-```bash
-# ワンクリックインストール（Windows）
-install.bat
-
-# または手動で
-cd server
-pip install -r requirements.txt
-ollama pull qwen2.5:7b
-python main.py
-```
-
-**2. API のテスト**
-
-```bash
-# ヘルスチェック
-curl http://localhost:18080/v1/health
-
-# CLI チャット
-cd client
-python test_client.py "こんにちは！"
-
-# または client/web/index.html をブラウザで開く
-```
-
-**3. UE4 セットアップ**
-- UnLua 2.3.6 プラグインを `Plugins/UnLua/` に配置
-- `ue4/ProjectChat/ProjectChat.uproject` を開く
-- UMG_MAIN ウィジェットに `IUnLuaInterface` を実装
-- ブループリントに `CheckReply` 関数を追加（空実装で可）
-- コンパイルして実行
-
-#### API エンドポイント
-
-| メソッド | パス | 説明 |
-|---------|------|------|
-| GET | `/v1/health` | ヘルスチェック |
-| GET | `/v1/models` | 利用可能モデル一覧 |
-| POST | `/v1/chat` | 単発対話（コンテキストなし） |
-| POST | `/v1/chat/session?session_id=xxx` | コンテキスト付き対話 ⭐ |
-| POST | `/v1/chat/session/stream` | SSE ストリーミング |
-| POST | `/v1/chat/reset?session_id=xxx` | セッションリセット |
-| WS | `/v1/chat/ws` | WebSocket リアルタイム対話 |
-
-#### NPC キャラクター設定
-
-`Content/Script/UMG/UMG_MAIN.lua` 内の `NPCSystemPrompt` を編集してください：
-
-```lua
-local NPCSystemPrompt = [[
-あなたはゲームの中のNPC、アニメ風の女の子です。短く自然な日本語でプレイヤーの質問に答え、絵文字を多用し、毎回の返信は100文字以内にしてください。
-]]
-```
-
-Lua → C++ → Python のパイプラインが自動的にカスタムプロンプトを LLM に渡します。
-
-#### ライセンス
 
 MIT
 
@@ -343,161 +180,50 @@ MIT
 
 ### Overview
 
-**UE4-LocalLLM-Chat** is a complete local LLM (Large Language Model) NPC dialogue system. It enables real-time conversation between UE4.27 UMG widgets (driven by UnLua scripts) and locally running Ollama models.
+**UE4-LocalLLM-Chat v2.0** extends the v1.0 text chat system with a complete **voice input (ASR) → LLM → voice output (TTS) → lip sync** pipeline. All components run fully offline.
 
-#### Key Features
+#### What's New in v2.0
 
-- **Fully Offline** — No internet required, all data stays local for privacy
-- **FastAPI Backend** — Async HTTP + WebSocket + SSE streaming support
-- **UE4.27 Integration** — UnLua 2.3.6 Lua scripting for UMG widgets
-- **Multi-Session** — Per-NPC conversation context isolation via session_id
-- **Non-Blocking Async** — HTTP async send + K2_SetTimer polling, zero game thread blocking
-- **Custom SystemPrompt** — Dynamically inject NPC persona from the client side
-- **Multi-Model** — Supports all Ollama models (qwen2.5, llama3, mistral, etc.)
+| Module | Technology | Description |
+|--------|-----------|-------------|
+| ASR | faster-whisper base | Server-side mic capture + offline Whisper recognition |
+| TTS | edge-tts + ffmpeg | Microsoft Neural TTS (Xiaoxi voice) |
+| Lip Sync | MorphTarget timeline | Phoneme mapping → keyframes → UE4 SetMorphTarget |
+| Lua Integration | UnLua + ReceiveTick | Hot-reloadable, no recompile needed |
 
 #### Architecture
 
 ```
-┌──────────────────────────────────────────────┐
-│                  UE4.27 Client               │
-│  ┌────────────┐    ┌──────────────────────┐  │
-│  │ UMG_MAIN   │───▶│ ProjectChatGameMode  │  │
-│  │ (UnLua)    │    │ (C++, IUnLuaInterface)│  │
-│  └────────────┘    └──────────┬───────────┘  │
-│                               │ HTTP POST     │
-└───────────────────────────────┼───────────────┘
-                                │
-                                ▼
-┌──────────────────────────────────────────────┐
-│          FastAPI Server (localhost:18080)     │
-│  ┌──────────────────────────────────────┐    │
-│  │  /v1/chat/session?session_id=xxx     │    │
-│  │  ChatRequest: messages + system_prompt│    │
-│  └──────────────────┬───────────────────┘    │
-│                     │                        │
-│                     ▼                        │
-│  ┌──────────────────────────────────────┐    │
-│  │     Session Manager (per NPC)         │    │
-│  │  [system][user][assistant][user]...   │    │
-│  └──────────────────┬───────────────────┘    │
-└─────────────────────┼────────────────────────┘
-                      │
-                      ▼
-┌──────────────────────────────────────────────┐
-│          Ollama (localhost:11434)             │
-│  qwen2.5:7b / llama3 / mistral / ...         │
-└──────────────────────────────────────────────┘
-```
-
-#### File Structure
-
-```
-UE4-LocalLLM-Chat/
-├── README.md                 # This file
-├── install.bat               # Windows one-click install script
-├── server/                   # Python FastAPI server
-│   ├── main.py               # API main program
-│   ├── config.py             # Configuration file
-│   └── requirements.txt      # Python dependencies
-├── client/                   # Test clients
-│   ├── test_client.py        # CLI test tool
-│   └── web/
-│       └── index.html        # Web chat UI
-└── ue4/
-    └── ProjectChat/          # UE4.27 project
-        ├── ProjectChat.uproject
-        ├── Config/
-        │   ├── DefaultEngine.ini              # Engine config (GameMode, map)
-        │   ├── DefaultGame.ini                # Packaging config (UnLua script paths)
-        │   ├── DefaultInput.ini               # Input bindings
-        │   ├── DefaultEditor.ini              # Editor settings
-        │   └── DefaultEditorPerProjectUserSettings.ini
-        ├── Source/
-        │   ├── ProjectChat.Target.cs
-        │   ├── ProjectChatEditor.Target.cs
-        │   └── ProjectChat/
-        │       ├── ProjectChat.h / .cpp
-        │       ├── ProjectChat.Build.cs
-        │       ├── ProjectChatCharacter.h / .cpp
-        │       ├── ProjectChatGameMode.h / .cpp     # GameMode (IUnLuaInterface)
-        │       └── LLMChatComponent.h / .cpp        # Optional component (Blueprint-friendly)
-        └── Content/
-            ├── UMG/
-            │   └── UMG_Main.uasset            # Chat UI blueprint (UnLua binding)
-            └── Script/                        # UnLua scripts
-                ├── ProjectChat/
-                │   ├── ProjectChatGameMode.lua      # GameMode binding
-                │   └── LLMChatComponent.lua         # Component binding
-                ├── Tools/
-                │   └── Screen.lua                   # Screen print utility
-                └── UMG/
-                    └── UMG_MAIN.lua                 # Chat UI main logic
+[Player holds V key]
+      │
+      ▼
+UE4 ASRComponent ──POST──▶ /v1/asr/start  (mic recording begins server-side)
+      │
+[Release V]──POST──▶ /v1/asr/stop  ──▶  Whisper ASR  ──▶  {"text": "..."}
+      │
+      ▼
+LLMChatComponent ──POST──▶ /v1/chat/session  ──▶  Ollama  ──▶  {"content": "..."}
+      │
+      ▼
+TTSLipSyncComponent ──POST──▶ /v1/tts  ──▶  edge-tts + phoneme timeline
+      │
+      ▼
+Play WAV audio  +  ReceiveTick drives MorphTargets per keyframe
 ```
 
 #### Quick Start
 
-**Prerequisites**
-- Python 3.9+
-- [Ollama](https://ollama.com/) installed with models pulled
-- UE 4.27 + Visual Studio 2019
-- [UnLua 2.3.6](https://github.com/Tencent/UnLua) plugin (place in `Plugins/UnLua/`)
-
-**1. Install & Start Server**
-
 ```bash
-# One-click install (Windows)
-install.bat
+# Install all dependencies (downloads ~150MB Whisper model on first run)
+install_voice.bat
 
-# Or manually
-cd server
-pip install -r requirements.txt
-ollama pull qwen2.5:7b
-python main.py
+# Start server
+cd server && python main.py
 ```
 
-**2. Test the API**
-
-```bash
-# Health check
-curl http://localhost:18080/v1/health
-
-# Command-line chat
-cd client
-python test_client.py "Hello!"
-
-# Or open client/web/index.html in a browser
-```
-
-**3. UE4 Setup**
-- Place UnLua 2.3.6 plugin in `Plugins/UnLua/`
-- Open `ue4/ProjectChat/ProjectChat.uproject`
-- Implement `IUnLuaInterface` on UMG_MAIN Widget
-- Add a `CheckReply` function in Blueprint (empty body is fine)
-- Compile and run
-
-#### API Endpoints
-
-| Method | Path | Description |
-|--------|------|-------------|
-| GET | `/v1/health` | Health check |
-| GET | `/v1/models` | List available models |
-| POST | `/v1/chat` | Single-turn chat (no context) |
-| POST | `/v1/chat/session?session_id=xxx` | Context-aware chat ⭐ |
-| POST | `/v1/chat/session/stream` | SSE streaming chat |
-| POST | `/v1/chat/reset?session_id=xxx` | Reset session |
-| WS | `/v1/chat/ws` | WebSocket real-time chat |
-
-#### Custom NPC Persona
-
-Edit `NPCSystemPrompt` in `Content/Script/UMG/UMG_MAIN.lua`:
-
-```lua
-local NPCSystemPrompt = [[
-You are an in-game NPC, an anime-style girl. Answer player questions in short, natural English, use lots of emoticons, and keep each reply under 100 characters.
-]]
-```
-
-The Lua → C++ → Python pipeline automatically delivers your custom prompt to the LLM.
+Add three components to your NPC Blueprint: `ASRComponent`, `LLMChatComponent`, `TTSLipSyncComponent`.  
+Bind `ThirdPersonCharacter.lua` via `IUnLuaInterface`.  
+Hold **V** to talk, release to get a voiced + lip-synced response.
 
 #### License
 
