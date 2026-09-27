@@ -4,6 +4,7 @@
 > **v2.0** UE4.27 + UnLua + FastAPI + Ollama — Local LLM Voice Dialogue + Lip Sync System
 
 ---
+<img width="800" height="450" alt="voice+LLM" src="https://github.com/user-attachments/assets/f2f50592-39a2-4f3b-9c50-7a6ef91bcf16" />
 
 <img width="617" height="387" alt="13225a32-e3c9-459c-94af-1553c9553cd2" src="https://github.com/user-attachments/assets/82029e0c-7934-4cbb-8260-9f9229744b05" />
 <img width="864" height="474" alt="63b362ba0106d5d83d91fdea004e8b13" src="https://github.com/user-attachments/assets/5df85db8-4632-4e8d-8115-7d8c4b56f633" />
